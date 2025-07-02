@@ -1,90 +1,112 @@
+import chromium from 'chrome-aws-lambda';
+import puppeteer from 'puppeteer-core';
 import { createClient } from '@supabase/supabase-js';
 
+// Inisialisasi Supabase
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
 
-// Deteksi provider
+// Fungsi deteksi provider berdasarkan awalan nomor
 function detectProvider(phone) {
-  if (phone.startsWith("+6281")) return "Telkomsel";
-  if (phone.startsWith("+6282")) return "Indosat";
-  if (phone.startsWith("+6283")) return "XL";
-  if (phone.startsWith("+6285")) return "Tri/Smartfren";
-  return "Tidak Diketahui";
+  if (phone.startsWith('+6281')) return 'Telkomsel';
+  if (phone.startsWith('+6282')) return 'Indosat';
+  if (phone.startsWith('+6285')) return 'Tri / By.U';
+  if (phone.startsWith('+6289')) return 'XL / Axis';
+  return 'Tidak Diketahui';
 }
 
-// Scrape dari Truecaller (tanpa Puppeteer)
+// Scraping dari Truecaller
 async function scrapeTruecaller(phone) {
-  try {
-    const res = await fetch(`https://www.truecaller.com/search/id/${phone}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9"
-      }
-    });
-    const html = await res.text();
+  const browser = await puppeteer.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath,
+    headless: chromium.headless,
+  });
 
-    const nameMatch = html.match(/"name":"(.*?)"/);
-    const locationMatch = html.match(/"address":"(.*?)"/);
+  const page = await browser.newPage();
+  await page.goto(`https://www.truecaller.com/search/id/${phone}`, {
+    waitUntil: 'networkidle2',
+  });
 
-    const name = nameMatch?.[1] || "Tidak Ditemukan";
-    const location = locationMatch?.[1] || "Tidak Ditemukan";
-
+  // Tunggu elemen muncul (maks. 5 detik)
+  await page.waitForTimeout(3000);
+  const result = await page.evaluate(() => {
+    const name = document.querySelector('.name')?.innerText || 'Tidak Ditemukan';
+    const location = document.querySelector('.location')?.innerText || 'Tidak Ditemukan';
     return { name, location };
-  } catch (err) {
-    return { name: "Tidak Ditemukan", location: "Tidak Ditemukan" };
-  }
+  });
+
+  await browser.close();
+  return result;
 }
 
-// Simulasi Facebook & Telegram (dummy)
-function searchFacebook(phone) {
-  return { exists: false };
+// Scraping Google (placeholder)
+async function scrapeGoogle(phone) {
+  return { name: "Tidak Ditemukan" };
 }
-function searchTelegram(phone) {
+
+// Placeholder Facebook
+async function scrapeFacebook(phone) {
+  return { exists: false, name: "Tidak Ditemukan" };
+}
+
+// Placeholder Telegram
+async function scrapeTelegram(phone) {
   return { exists: false };
 }
 
+// API Handler
 export default async function handler(req, res) {
   const { phone } = req.query;
 
-  if (!phone || !phone.startsWith("+62")) {
-    return res.status(400).json({ error: "Gunakan format +62..." });
+  if (!phone || !phone.startsWith('+62')) {
+    return res.status(400).json({ error: 'Gunakan format +62...' });
   }
 
-  const provider = detectProvider(phone);
-  const timestamp = new Date().toISOString();
+  try {
+    // Jalankan scraping
+    const [truecallerResult, googleResult, fbResult, tgResult] = await Promise.all([
+      scrapeTruecaller(phone),
+      scrapeGoogle(phone),
+      scrapeFacebook(phone),
+      scrapeTelegram(phone),
+    ]);
 
-  const truecallerResult = await scrapeTruecaller(phone);
-  const facebookResult = searchFacebook(phone);
-  const telegramResult = searchTelegram(phone);
+    const provider = detectProvider(phone);
+    const name = truecallerResult.name || googleResult.name || fbResult.name || 'Tidak Ditemukan';
+    const location = truecallerResult.location || 'Tidak Ditemukan';
 
-  // Simpan ke Supabase
-  const { error } = await supabase.from("logs").insert([
-    {
+    // Simpan ke Supabase
+    await supabase.from('logs').insert([
+      {
+        phone,
+        provider,
+        name,
+        location,
+        facebook: fbResult.exists,
+        telegram: tgResult.exists,
+        truecaller: true,
+        truecaller_name: truecallerResult.name || '',
+        created_at: new Date(),
+      }
+    ]);
+
+    // Kirim hasil ke frontend
+    res.status(200).json({
       phone,
       provider,
-      name: truecallerResult.name,
-      location: truecallerResult.location,
-      facebook: facebookResult.exists,
-      telegram: telegramResult.exists,
-      truecaller: true,
-      truecaller_name: truecallerResult.name,
-      created_at: timestamp,
-    }
-  ]);
+      name,
+      location,
+      facebook: fbResult.exists,
+      telegram: tgResult.exists,
+      timestamp: new Date().toISOString()
+    });
 
-  if (error) {
-    return res.status(500).json({ error: "Gagal menyimpan ke database" });
+  } catch (err) {
+    console.error("Error scraping:", err);
+    res.status(500).json({ error: 'Terjadi kesalahan saat scraping data' });
   }
-
-  return res.status(200).json({
-    phone,
-    provider,
-    name: truecallerResult.name,
-    location: truecallerResult.location,
-    facebook: facebookResult.exists,
-    telegram: telegramResult.exists,
-    timestamp
-  });
-      }
+}
+  
