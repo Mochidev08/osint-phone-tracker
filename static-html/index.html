@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OSINT Nomor Telepon</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen">
+  <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full">
+    <h1 class="text-2xl font-bold mb-4 text-center">🔍 OSINT Nomor Telepon</h1>
+    <input id="phoneInput" type="tel" placeholder="+6281234567890" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring focus:ring-blue-300" />
+    <button onclick="generateLinks()" class="mt-4 w-full bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition">Cari Sekarang</button>
+
+    <div id="results" class="mt-6 hidden">
+      <h2 class="text-lg font-semibold mb-2">📋 Hasil Pencarian:</h2>
+      <ul class="space-y-2">
+        <li><a id="googleLink" href="#" class="text-blue-600 hover:underline" target="_blank">🔎 Google</a></li>
+        <li><a id="facebookLink" href="#" class="text-blue-600 hover:underline" target="_blank">📘 Facebook</a></li>
+        <li><a id="telegramLink" href="#" class="text-blue-600 hover:underline" target="_blank">✈️ Telegram</a></li>
+        <li><a id="waLink" href="#" class="text-blue-600 hover:underline" target="_blank">💬 WhatsApp</a></li>
+        <li><a id="truecallerLink" href="#" class="text-blue-600 hover:underline" target="_blank">📞 Truecaller</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <script>
+    function generateLinks() {
+      const phone = document.getElementById("phoneInput").value.trim();
+      if (!phone.startsWith("+62")) {
+        alert("Gunakan format internasional, contoh: +6281234567890");
+        return;
+      }
+
+      document.getElementById("results").classList.remove("hidden");
+
+      document.getElementById("googleLink").href = `https://www.google.com/search?q="\${phone}"`;
+      document.getElementById("facebookLink").href = `https://www.facebook.com/search/top?q=\${phone}`;
+      document.getElementById("telegramLink").href = `https://t.me/\${phone.replace("+", "")}`;
+      document.getElementById("waLink").href = `https://wa.me/\${phone.replace("+", "")}`;
+      document.getElementById("truecallerLink").href = `https://www.truecaller.com/search/id/\${phone.replace("+", "")}`;
+    }
+  </script>
+</body>
+</html>
