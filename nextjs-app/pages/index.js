@@ -19,6 +19,11 @@ export default function Home() {
       const response = await fetch(`/api/lookup?phone=${encodeURIComponent(phone)}`);
       const data = await response.json();
 
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
       setResults(data);
     } catch (error) {
       alert("Terjadi kesalahan saat mencari data.");
@@ -39,22 +44,24 @@ export default function Home() {
         <input id="phoneInput" type="tel" placeholder="+6281234567890" className="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring focus:ring-blue-300" />
         <button onClick={lookupPhone} className="mt-4 w-full bg-blue-600 text-white px-4 py-2 rounded-xl hover:bg-blue-700 transition">Cari Sekarang</button>
 
-        {loading && <div className="mt-4 text-center text-sm text-gray-500">Sedang mencari data...</div>}
+        {loading && <div className="mt-4 text-center text-sm text-gray-500">🔄 Sedang mencari data...</div>}
 
         {results && (
           <div id="results" className="mt-6">
             <h2 className="text-lg font-semibold mb-2">📋 Hasil Pencarian:</h2>
             <ul id="resultList" className="space-y-2 text-sm">
-              <li>Nama: {results.name}</li>
-              <li>Provider: {results.provider}</li>
-              <li>Lokasi: {results.location}</li>
-              <li>Facebook: {results.facebook ? 'Ada' : 'Tidak Ada'}</li>
-              <li>Telegram: {results.telegram ? 'Ada' : 'Tidak Ada'}</li>
-              <li>Waktu Pencarian: {new Date(results.timestamp).toLocaleString()}</li>
+              <li>📞 Nomor: {results.phone}</li>
+              <li>👤 Nama: {results.name || 'Tidak ditemukan'}</li>
+              <li>📡 Provider: {results.provider || 'Tidak diketahui'}</li>
+              <li>📍 Lokasi: {results.location || 'Tidak ditemukan'}</li>
+              <li>📘 Facebook: {results.facebook ? 'Ada' : 'Tidak Ada'}</li>
+              <li>✈️ Telegram: {results.telegram ? 'Ada' : 'Tidak Ada'}</li>
+              <li>🕒 Waktu Pencarian: {results.timestamp ? new Date(results.timestamp).toLocaleString() : 'Tidak tersedia'}</li>
             </ul>
           </div>
         )}
       </div>
     </div>
   );
-}
+    }
+          
