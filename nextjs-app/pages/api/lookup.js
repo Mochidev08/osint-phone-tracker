@@ -5,12 +5,22 @@ const supabase = createClient(
   process.env.SUPABASE_ANON_KEY
 );
 
+// Deteksi provider
+function detectProvider(phone) {
+  if (phone.startsWith("+6281")) return "Telkomsel";
+  if (phone.startsWith("+6282")) return "Indosat";
+  if (phone.startsWith("+6283")) return "XL";
+  if (phone.startsWith("+6285")) return "Tri/Smartfren";
+  return "Tidak Diketahui";
+}
+
+// Scrape dari Truecaller (tanpa Puppeteer)
 async function scrapeTruecaller(phone) {
   try {
     const res = await fetch(`https://www.truecaller.com/search/id/${phone}`, {
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9"
       }
     });
     const html = await res.text();
@@ -18,21 +28,21 @@ async function scrapeTruecaller(phone) {
     const nameMatch = html.match(/"name":"(.*?)"/);
     const locationMatch = html.match(/"address":"(.*?)"/);
 
-    const name = nameMatch ? nameMatch[1] : "Tidak Ditemukan";
-    const location = locationMatch ? locationMatch[1] : "Tidak Ditemukan";
+    const name = nameMatch?.[1] || "Tidak Ditemukan";
+    const location = locationMatch?.[1] || "Tidak Ditemukan";
 
     return { name, location };
-  } catch (error) {
+  } catch (err) {
     return { name: "Tidak Ditemukan", location: "Tidak Ditemukan" };
   }
 }
 
-function detectProvider(phone) {
-  if (phone.startsWith("+62811") || phone.startsWith("+62812")) return "Telkomsel";
-  if (phone.startsWith("+62813") || phone.startsWith("+62822")) return "XL";
-  if (phone.startsWith("+62852") || phone.startsWith("+62853")) return "Telkomsel (Kartu As)";
-  if (phone.startsWith("+62821") || phone.startsWith("+62823")) return "Indosat";
-  return "Tidak Diketahui";
+// Simulasi Facebook & Telegram (dummy)
+function searchFacebook(phone) {
+  return { exists: false };
+}
+function searchTelegram(phone) {
+  return { exists: false };
 }
 
 export default async function handler(req, res) {
@@ -42,38 +52,39 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Gunakan format +62..." });
   }
 
-  try {
-    const result = await scrapeTruecaller(phone);
-    const provider = detectProvider(phone);
+  const provider = detectProvider(phone);
+  const timestamp = new Date().toISOString();
 
-    const { error } = await supabase.from('logs').insert([{
+  const truecallerResult = await scrapeTruecaller(phone);
+  const facebookResult = searchFacebook(phone);
+  const telegramResult = searchTelegram(phone);
+
+  // Simpan ke Supabase
+  const { error } = await supabase.from("logs").insert([
+    {
       phone,
       provider,
-      name: result.name,
-      location: result.location,
-      facebook: false,
-      telegram: false,
+      name: truecallerResult.name,
+      location: truecallerResult.location,
+      facebook: facebookResult.exists,
+      telegram: telegramResult.exists,
       truecaller: true,
-      truecaller_name: result.name,
-      created_at: new Date(),
-    }]);
-
-    if (error) {
-      console.error("Supabase Error:", error);
-      return res.status(500).json({ error: "Gagal menyimpan ke database" });
+      truecaller_name: truecallerResult.name,
+      created_at: timestamp,
     }
+  ]);
 
-    res.status(200).json({
-      phone,
-      provider,
-      name: result.name,
-      location: result.location,
-      facebook: false,
-      telegram: false,
-      timestamp: new Date(),
-    });
-  } catch (err) {
-    console.error("Server Error:", err);
-    res.status(500).json({ error: "Terjadi kesalahan server" });
+  if (error) {
+    return res.status(500).json({ error: "Gagal menyimpan ke database" });
   }
+
+  return res.status(200).json({
+    phone,
+    provider,
+    name: truecallerResult.name,
+    location: truecallerResult.location,
+    facebook: facebookResult.exists,
+    telegram: telegramResult.exists,
+    timestamp
+  });
       }
