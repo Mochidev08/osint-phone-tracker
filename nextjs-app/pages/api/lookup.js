@@ -1,17 +1,38 @@
 import { createClient } from '@supabase/supabase-js';
-import chromium from 'chrome-aws-lambda';
-import puppeteer from 'puppeteer-core';
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_ANON_KEY
 );
 
+async function scrapeTruecaller(phone) {
+  try {
+    const res = await fetch(`https://www.truecaller.com/search/id/${phone}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9",
+      }
+    });
+    const html = await res.text();
+
+    const nameMatch = html.match(/"name":"(.*?)"/);
+    const locationMatch = html.match(/"address":"(.*?)"/);
+
+    const name = nameMatch ? nameMatch[1] : "Tidak Ditemukan";
+    const location = locationMatch ? locationMatch[1] : "Tidak Ditemukan";
+
+    return { name, location };
+  } catch (error) {
+    return { name: "Tidak Ditemukan", location: "Tidak Ditemukan" };
+  }
+}
+
 function detectProvider(phone) {
   if (phone.startsWith("+62811") || phone.startsWith("+62812")) return "Telkomsel";
-  if (phone.startsWith("+62821") || phone.startsWith("+62822")) return "XL";
-  if (phone.startsWith("+62852") || phone.startsWith("+62853")) return "AS";
-  return "Unknown";
+  if (phone.startsWith("+62813") || phone.startsWith("+62822")) return "XL";
+  if (phone.startsWith("+62852") || phone.startsWith("+62853")) return "Telkomsel (Kartu As)";
+  if (phone.startsWith("+62821") || phone.startsWith("+62823")) return "Indosat";
+  return "Tidak Diketahui";
 }
 
 export default async function handler(req, res) {
@@ -22,49 +43,37 @@ export default async function handler(req, res) {
   }
 
   try {
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath || '/usr/bin/chromium-browser',
-      headless: chromium.headless,
-    });
+    const result = await scrapeTruecaller(phone);
+    const provider = detectProvider(phone);
 
-    const page = await browser.newPage();
-    await page.goto(`https://www.truecaller.com/search/id/${phone.replace("+", "")}`, { waitUntil: 'networkidle2' });
-
-    const result = await page.evaluate(() => {
-      const name = document.querySelector(".name")?.innerText || "Tidak Ditemukan";
-      const location = document.querySelector(".location")?.innerText || "Tidak Ditemukan";
-      return { name, location };
-    });
-
-    await browser.close();
-
-    const { error } = await supabase.from("logs").insert([
-      {
-        phone,
-        provider: detectProvider(phone),
-        name: result.name,
-        location: result.location,
-        truecaller: result.name !== "Tidak Ditemukan",
-        facebook: false,
-        telegram: false,
-        created_at: new Date()
-      }
-    ]);
-
-    if (error) throw error;
-
-    return res.status(200).json({
+    const { error } = await supabase.from('logs').insert([{
       phone,
-      provider: detectProvider(phone),
+      provider,
       name: result.name,
       location: result.location,
       facebook: false,
       telegram: false,
-      timestamp: new Date().toISOString()
+      truecaller: true,
+      truecaller_name: result.name,
+      created_at: new Date(),
+    }]);
+
+    if (error) {
+      console.error("Supabase Error:", error);
+      return res.status(500).json({ error: "Gagal menyimpan ke database" });
+    }
+
+    res.status(200).json({
+      phone,
+      provider,
+      name: result.name,
+      location: result.location,
+      facebook: false,
+      telegram: false,
+      timestamp: new Date(),
     });
   } catch (err) {
-    console.error("Error:", err);
-    return res.status(500).json({ error: "Terjadi kesalahan saat mencari data." });
+    console.error("Server Error:", err);
+    res.status(500).json({ error: "Terjadi kesalahan server" });
   }
-}
+      }
